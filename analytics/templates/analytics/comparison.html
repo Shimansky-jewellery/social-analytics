@@ -1,0 +1,55 @@
+{% extends "analytics/base.html" %}
+{% load humanize %}
+{% block title %}Channel Comparison · Social Insights{% endblock %}
+{% block page_heading %}Channel comparison{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span>{{ row_count }} rows in comparison</span>
+  <form method="get" class="filter-form">
+    <label for="channel">Channel</label><select name="channel" id="channel"><option value="All" {% if selected_channel == 'All' %}selected{% endif %}>All channels</option>{% for channel in channels %}<option value="{{ channel }}" {% if selected_channel == channel %}selected{% endif %}>{{ channel }}</option>{% endfor %}</select>
+    <label for="start_date">From</label><input id="start_date" name="start_date" type="date" value="{{ start_date }}">
+    <label for="end_date">To</label><input id="end_date" name="end_date" type="date" value="{{ end_date }}">
+    <button class="button button-dark" type="submit">Filter</button>
+  </form>
+</div>
+{% if filter_error %}<p class="message warning">{{ filter_error }}</p>{% endif %}
+{% if row_count %}
+<section class="panel chart-panel comparison-chart">
+  <div class="panel-heading"><div><div class="section-kicker">CHANNEL METRICS</div><h2>Compare channels</h2></div>
+    <label for="metric-select">Metric <select id="metric-select">{% for metric in metrics %}<option value="{{ metric.key }}">{{ metric.label }}</option>{% endfor %}</select></label>
+  </div>
+  <div class="chart-wrap"><canvas id="comparisonChart"></canvas></div>
+</section>
+<section class="panel comparison-table-wrap">
+  <div class="panel-heading"><div><div class="section-kicker">SUMMARY TABLE</div><h2>Reported performance</h2></div></div>
+  <div class="table-scroll"><table class="comparison-table"><thead><tr><th>Channel</th>{% for metric in metrics %}<th>{{ metric.label }}</th>{% endfor %}</tr></thead><tbody>
+  {% for channel in comparison_channels %}<tr><th>{{ channel }}</th>{% for metric in metrics %}{% for item in metric.values %}{% if item.channel == channel %}<td>{% if item.value is not None %}{% if metric.key == 'engagement_rate' %}{{ item.value|floatformat:2 }}%{% else %}{{ item.value|floatformat:0|intcomma }}{% endif %}{% else %}—{% endif %}</td>{% endif %}{% endfor %}{% endfor %}</tr>{% empty %}<tr><td colspan="9">No metrics match the selected filters.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="muted small">Engagement rate is an arithmetic average of reported percentages; other metrics are totals. Blank metrics are excluded, not treated as zero.</p>
+</section>
+{% else %}
+<section class="empty-state panel"><div class="empty-icon">⇄</div><h2>No data to compare</h2><p>Import CSV data to see a comparison of your channels.</p><a class="button button-dark" href="{% url 'analytics:import_sheet' %}">Import data →</a></section>
+{% endif %}
+{{ metrics|json_script:"comparison-metrics" }}
+<script>
+const comparisonMetrics = JSON.parse(document.getElementById('comparison-metrics').textContent);
+const select = document.getElementById('metric-select');
+const palette = ['#635bff', '#13a88a', '#f59e0b', '#ec4899', '#0ea5e9', '#8b5cf6', '#64748b'];
+if (select) {
+  const chart = new Chart(document.getElementById('comparisonChart'), {
+    type: 'bar',
+    data: {labels: [], datasets: [{label: '', data: [], backgroundColor: palette, borderRadius: 7}]},
+    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true}}}
+  });
+  function setMetric() {
+    const metric = comparisonMetrics.find(item => item.key === select.value);
+    chart.data.labels = metric.values.map(item => item.channel);
+    chart.data.datasets[0].label = metric.label;
+    chart.data.datasets[0].data = metric.values.map(item => item.value);
+    chart.update();
+  }
+  select.addEventListener('change', setMetric);
+  setMetric();
+}
+</script>
+{% endblock %}

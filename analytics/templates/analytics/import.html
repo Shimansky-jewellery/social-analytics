@@ -1,0 +1,70 @@
+{% extends "analytics/base.html" %}
+{% block title %}Social Media Data Import · Social Insights{% endblock %}
+{% block page_heading %}Social Media Data Import{% endblock %}
+{% block content %}
+{% if result %}
+<section class="panel import-summary">
+  <div class="section-kicker">IMPORT SUMMARY</div>
+  <h2>Import and analysis complete</h2>
+  <div class="summary-grid">
+    <div><strong>{{ result.imported }}</strong><span>Imported</span></div>
+    <div><strong>{{ result.skipped }}</strong><span>Skipped (duplicates)</span></div>
+    <div><strong>{{ result.rejected }}</strong><span>Rejected</span></div>
+  </div>
+  <p class="muted small">{{ result.total }} data rows processed. Existing records were preserved.</p>
+  {% if result.warnings %}<ul class="validation-list">{% for warning in result.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+  {% if result.rejections %}<h3>Rows needing attention</h3><ul class="validation-list">{% for rejection in result.rejections %}<li>CSV line {{ rejection.line }}: {{ rejection.errors|join:", " }}</li>{% endfor %}</ul>{% if result.more_rejections %}<p class="muted small">And {{ result.more_rejections }} more rejected rows.</p>{% endif %}{% endif %}
+  <a class="button button-dark" href="{% url 'analytics:dashboard' %}">View analytics dashboard →</a>
+</section>
+{% endif %}
+<section class="import-layout">
+  <div class="panel import-panel">
+    <div class="section-kicker">PRIMARY DATA SOURCE</div>
+    <h2>Upload a CSV file</h2>
+    <p class="muted">Export your social media spreadsheet as a CSV, select it below, and import the data for analysis. Maximum file size: 8 MB.</p>
+    <form method="post" enctype="multipart/form-data" id="csv-import-form">
+      {% csrf_token %}
+      <label class="button button-outline upload-button" for="csv_file">Upload CSV File</label>
+      <input class="file-input" id="csv_file" name="csv_file" type="file" accept=".csv,text/csv" required>
+      <div class="selected-file" id="selected-file" aria-live="polite">No file selected</div>
+      <button class="button button-dark" id="import-button" type="submit">Import and Analyse Data</button>
+      <div class="loading-state" id="loading-state" aria-live="polite" hidden><span class="spinner"></span>Processing CSV file…</div>
+    </form>
+    <div class="help-box"><strong>Download a Google Sheet as CSV</strong><ol><li>Open the sheet in Google Sheets.</li><li>Choose <strong>File → Download → Comma Separated Values (.csv)</strong>.</li><li>Select the downloaded CSV file above.</li></ol></div>
+    <details class="legacy-import">
+      <summary>Or import from a Google Sheets URL</summary>
+      <p class="muted small">The sheet must be viewable without signing in or published to the web.</p>
+      <form method="post">
+        {% csrf_token %}
+        <label for="sheet_url">Google Sheets URL</label>
+        <input id="sheet_url" name="sheet_url" type="url" placeholder="https://docs.google.com/spreadsheets/d/...">
+        <button class="button button-dark" type="submit">Import Google Sheet</button>
+      </form>
+    </details>
+  </div>
+  <div class="panel expected-panel">
+    <div class="section-kicker">EXPECTED FORMAT</div><h3>Supported columns</h3>
+    <ul class="column-list">
+      <li>Channel <span>(required)</span></li><li>Period <span>(required)</span></li>
+      <li>Follower Growth</li><li>Reach</li><li>Views</li><li>Engagement Rate (%)</li>
+      <li>Content Interactions</li><li>Click-Through Rate (CTR) (%)</li><li>Profile Visits</li>
+      <li>Link Clicks</li><li>DMs/Leads Generated</li><li>Top Performing Post</li>
+    </ul>
+    <p class="muted small">Column names are matched case-insensitively, with extra spaces and common header variants accepted. Populated unsupported columns are reported rather than discarded.</p>
+    <p class="muted small">Use one row per channel and reporting period. Percentage values are stored in percentage points (for example, <strong>5.4%</strong> is stored as 5.4). Blank metrics remain blank.</p>
+  </div>
+</section>
+<script>
+const csvForm = document.getElementById('csv-import-form');
+const csvInput = document.getElementById('csv_file');
+csvInput.addEventListener('change', () => {
+  document.getElementById('selected-file').textContent = csvInput.files.length
+    ? csvInput.files[0].name
+    : 'No file selected';
+});
+csvForm.addEventListener('submit', () => {
+  document.getElementById('import-button').disabled = true;
+  document.getElementById('loading-state').hidden = false;
+});
+</script>
+{% endblock %}

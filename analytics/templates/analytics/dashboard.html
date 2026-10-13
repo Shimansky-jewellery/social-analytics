@@ -1,0 +1,51 @@
+{% extends "analytics/base.html" %}
+{% load humanize %}
+{% block title %}Dashboard · Social Insights{% endblock %}
+{% block page_heading %}Performance overview{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <div><span class="status-dot"></span><span>{{ row_count }} imported rows</span>{% if last_import %}<span class="muted">· Last imported {{ last_import|date:"j M Y, H:i" }}</span>{% endif %}</div>
+  <form method="get" class="filter-form"><label for="channel">Channel</label><select name="channel" id="channel"><option value="All" {% if selected_channel == 'All' %}selected{% endif %}>All channels</option>{% for channel in channels %}<option value="{{ channel }}" {% if selected_channel == channel %}selected{% endif %}>{{ channel }}</option>{% endfor %}</select><label for="start_date">From</label><input id="start_date" name="start_date" type="date" value="{{ start_date }}"><label for="end_date">To</label><input id="end_date" name="end_date" type="date" value="{{ end_date }}"><button class="button button-dark" type="submit">Filter</button></form>
+</div>
+{% if filter_error %}<p class="message warning">{{ filter_error }}</p>{% endif %}
+{% if row_count == 0 %}
+  <section class="empty-state panel"><div class="empty-icon">↥</div><h2>Your insights start here</h2><p>Upload a CSV export or import your shared Google Sheet to create graphs and channel comparisons.</p><a class="button button-dark" href="{% url 'analytics:import_sheet' %}">Import data →</a></section>
+{% else %}
+{% if filtered_row_count == 0 %}<p class="message warning">No rows match the selected channel and date range.</p>{% endif %}
+<section class="kpi-grid">
+  <article class="kpi-card"><div class="kpi-label">Follower growth</div><div class="kpi-value">{{ kpis.follower_growth|default_if_none:"—"|floatformat:0|intcomma }}</div><div class="kpi-foot">Net growth reported</div></article>
+  <article class="kpi-card"><div class="kpi-label">Total reach</div><div class="kpi-value">{{ kpis.reach|default_if_none:"—"|floatformat:0|intcomma }}</div><div class="kpi-foot">Sum of reported reach</div></article>
+  <article class="kpi-card"><div class="kpi-label">Total views</div><div class="kpi-value">{{ kpis.views|default_if_none:"—"|floatformat:0|intcomma }}</div><div class="kpi-foot">Views across periods</div></article>
+  <article class="kpi-card"><div class="kpi-label">Avg. engagement</div><div class="kpi-value">{{ kpis.engagement_rate|default_if_none:"—"|floatformat:2 }}{% if kpis.engagement_rate is not None %}<span class="unit">%</span>{% endif %}</div><div class="kpi-foot">Average of reported rates</div></article>
+  <article class="kpi-card"><div class="kpi-label">Interactions</div><div class="kpi-value">{{ kpis.content_interactions|default_if_none:"—"|floatformat:0|intcomma }}</div><div class="kpi-foot">Content interactions</div></article>
+  <article class="kpi-card"><div class="kpi-label">Profile visits</div><div class="kpi-value">{{ kpis.profile_visits|default_if_none:"—"|floatformat:0|intcomma }}</div><div class="kpi-foot">Reported profile traffic</div></article>
+  <article class="kpi-card"><div class="kpi-label">Link clicks</div><div class="kpi-value">{{ kpis.link_clicks|default_if_none:"—"|floatformat:0|intcomma }}</div><div class="kpi-foot">Reported link traffic</div></article>
+  <article class="kpi-card"><div class="kpi-label">Leads generated</div><div class="kpi-value">{{ kpis.leads|default_if_none:"—"|floatformat:0|intcomma }}</div><div class="kpi-foot">Reported enquiries/leads</div></article>
+</section>
+<section class="chart-grid">
+  <article class="panel chart-panel chart-wide"><div class="panel-heading"><div><div class="section-kicker">TREND</div><h2>Views over time</h2></div><span class="chart-tag">By channel</span></div><div class="chart-wrap"><canvas id="viewsChart"></canvas></div></article>
+  <article class="panel chart-panel"><div class="panel-heading"><div><div class="section-kicker">DISCOVERY</div><h2>Reach by channel</h2></div></div><div class="chart-wrap"><canvas id="reachChart"></canvas></div></article>
+  <article class="panel chart-panel"><div class="panel-heading"><div><div class="section-kicker">QUALITY</div><h2>Engagement rate</h2></div></div><div class="chart-wrap"><canvas id="engagementChart"></canvas></div></article>
+  <article class="panel chart-panel chart-wide"><div class="panel-heading"><div><div class="section-kicker">CONVERSION</div><h2>DMs / leads by channel</h2></div></div><div class="chart-wrap"><canvas id="leadsChart"></canvas></div></article>
+</section>
+<section class="bottom-grid">
+  <article class="panel insights-panel"><div class="panel-heading"><div><div class="section-kicker">AUTOMATED SUMMARY</div><h2>Key insights</h2></div><span class="sparkle">✳</span></div><ul class="insight-list">{% for insight in insights %}<li><span class="insight-bullet">↗</span><span>{{ insight }}</span></li>{% endfor %}</ul><p class="muted small">These observations describe the imported data; they do not establish why a metric changed.</p></article>
+  <article class="panel posts-panel"><div class="panel-heading"><div><div class="section-kicker">CONTENT</div><h2>Top-performing posts</h2></div></div>{% if top_posts %}<div class="post-list">{% for post in top_posts %}<div class="post-row"><div class="post-channel">{{ post.channel }}</div><div class="post-copy"><strong>{{ post.top_performing_post }}</strong><span>{{ post.period }} · {{ post.views|floatformat:0|intcomma }} views · {{ post.engagement_rate|floatformat:2 }}% engagement</span></div></div>{% endfor %}</div>{% else %}<p class="muted">No post titles have been supplied in the imported rows yet.</p>{% endif %}</article>
+</section>
+{{ chart_data|json_script:"dashboard-chart-data" }}
+<script>
+const chartData = JSON.parse(document.getElementById('dashboard-chart-data').textContent);
+const labels = chartData.periods || [];
+const palette = ['#635bff', '#13a88a', '#f59e0b', '#ec4899', '#0ea5e9', '#8b5cf6', '#64748b'];
+const common = {responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom', labels:{usePointStyle:true, boxWidth:7, padding:18}}}, scales:{x:{grid:{display:false}, ticks:{color:'#778096'}}, y:{beginAtZero:true, grid:{color:'#edf0f5'}, ticks:{color:'#778096'}}}};
+new Chart(document.getElementById('viewsChart'), {type:'line', data:{labels, datasets:(chartData.views||[]).map((s,i)=>({label:s.label,data:s.data,borderColor:palette[i%palette.length],backgroundColor:palette[i%palette.length],borderWidth:2.5,tension:.35,pointRadius:3,fill:false}))}, options:common});
+function barChart(id, source, suffix='') {
+ const items = source || [];
+ new Chart(document.getElementById(id), {type:'bar',data:{labels:items.map(x=>x.label),datasets:[{data:items.map(x=>x.value),backgroundColor:items.map((_,i)=>palette[i%palette.length]),borderRadius:7,maxBarThickness:42,label:'Value'}]},options:{...common,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>Number(c.raw).toLocaleString()+suffix}}}}});
+}
+barChart('reachChart',chartData.reachByChannel);
+barChart('engagementChart',chartData.engagementByChannel,'%');
+barChart('leadsChart',chartData.leadsByChannel);
+</script>
+{% endif %}
+{% endblock %}

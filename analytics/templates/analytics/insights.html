@@ -1,0 +1,40 @@
+{% extends "analytics/base.html" %}
+{% load humanize %}
+{% block title %}Insights · Social Insights{% endblock %}
+{% block page_heading %}Social media insights{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span>{{ row_count }} rows analysed</span>
+  <form method="get" class="filter-form">
+    <label for="channel">Channel</label><select name="channel" id="channel"><option value="All" {% if selected_channel == 'All' %}selected{% endif %}>All channels</option>{% for channel in channels %}<option value="{{ channel }}" {% if selected_channel == channel %}selected{% endif %}>{{ channel }}</option>{% endfor %}</select>
+    <label for="start_date">From</label><input id="start_date" name="start_date" type="date" value="{{ start_date }}">
+    <label for="end_date">To</label><input id="end_date" name="end_date" type="date" value="{{ end_date }}">
+    <button class="button button-dark" type="submit">Filter</button>
+  </form>
+</div>
+{% if filter_error %}<p class="message warning">{{ filter_error }}</p>{% endif %}
+<section class="bottom-grid">
+  <article class="panel insights-panel"><div class="panel-heading"><div><div class="section-kicker">BASED ON IMPORTED DATA</div><h2>Channel highlights</h2></div></div>
+    <ul class="insight-list">{% for insight in insights %}<li><span class="insight-bullet">↗</span><span>{{ insight }}</span></li>{% endfor %}</ul>
+    {% if period_changes %}<h3>Period-over-period changes</h3><ul class="insight-list">{% for change in period_changes %}<li><span class="insight-bullet">↗</span><span>{{ change }}</span></li>{% endfor %}</ul><p class="muted small">Changes are highlighted when they are at least 20% between the two latest parseable reporting dates.</p>{% elif row_count %}<p class="muted small">Trend comparisons need at least two parseable reporting dates with populated values. No such comparison is available for the current selection.</p>{% endif %}
+  </article>
+  <article class="panel posts-panel"><div class="panel-heading"><div><div class="section-kicker">POST-LEVEL DATA</div><h2>Top-performing posts</h2></div></div>
+    {% if top_posts %}<div class="post-list">{% for post in top_posts %}<div class="post-row"><div class="post-channel">{{ post.channel }}</div><div class="post-copy"><strong>{{ post.top_performing_post }}</strong><span>{{ post.period }} · {{ post.views|default_if_none:"—"|floatformat:0|intcomma }} views{% if post.engagement_rate is not None %} · {{ post.engagement_rate|floatformat:2 }}% engagement{% endif %}</span></div></div>{% endfor %}</div>{% else %}<p class="muted">No post titles are available for the selected data.</p>{% endif %}
+  </article>
+</section>
+{% if period_series %}
+<section class="panel chart-panel insights-trend">
+  <div class="panel-heading"><div><div class="section-kicker">REPORTING PERIODS</div><h2>Follower growth trend</h2></div></div>
+  <div class="chart-wrap"><canvas id="followerTrendChart"></canvas></div>
+</section>
+{{ period_series|json_script:"period-series-data" }}
+<script>
+const periodSeries = JSON.parse(document.getElementById('period-series-data').textContent);
+new Chart(document.getElementById('followerTrendChart'), {
+  type: 'line',
+  data: {labels: periodSeries.periods, datasets: [{label: 'Follower growth', data: periodSeries.follower_growth, borderColor: '#635bff', backgroundColor: '#635bff', tension: .3, spanGaps: false}]},
+  options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom'}}, scales: {y: {beginAtZero: true}}}
+});
+</script>
+{% endif %}
+{% endblock %}

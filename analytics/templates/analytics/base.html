@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Social Insights{% endblock %}</title>
+  <link rel="stylesheet" href="{% load static %}{% static 'analytics/css/app.css' %}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="{% url 'analytics:dashboard' %}"><span class="brand-mark">S</span><span>Social Insights<small>Analytics workspace</small></span></a>
+      <div class="nav-label">WORKSPACE</div>
+      <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'analytics:dashboard' %}">▦ <span>Dashboard</span></a>
+      <a class="nav-link {% if request.resolver_match.url_name == 'import_sheet' %}active{% endif %}" href="{% url 'analytics:import_sheet' %}">↥ <span>Import data</span></a>
+      <a class="nav-link {% if request.resolver_match.url_name == 'comparison' %}active{% endif %}" href="{% url 'analytics:comparison' %}">⇄ <span>Channel comparison</span></a>
+      <a class="nav-link {% if request.resolver_match.url_name == 'insights' %}active{% endif %}" href="{% url 'analytics:insights' %}">✳ <span>Insightss</span></a>
+      <div class="sidebar-note"><strong>Manual refresh</strong><p>Upload a CSV export or import a shared Google Sheet.</p></div>
+    </aside>
+    <main class="main-area">
+      <header class="topbar"><div><span class="eyebrow">SOCIAL MEDIA PERFORMANCE</span><h1>{% block page_heading %}Dashboard{% endblock %}</h1></div><a class="button button-dark" href="{% url 'analytics:import_sheet' %}">＋ Import data</a></header>
+      {% if messages %}<div class="messages">{% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
+      {% block content %}{% endblock %}
+      <footer>Social Insights · Django + pandas + Chart.js</footer>
+    </main>
+  </div>
+</body>
+</html>
