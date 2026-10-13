@@ -22,6 +22,9 @@
     {% if top_posts %}<div class="post-list">{% for post in top_posts %}<div class="post-row"><div class="post-channel">{{ post.channel }}</div><div class="post-copy"><strong>{{ post.top_performing_post }}</strong><span>{{ post.period }} · {{ post.views|default_if_none:"—"|floatformat:0|intcomma }} views{% if post.engagement_rate is not None %} · {{ post.engagement_rate|floatformat:2 }}% engagement{% endif %}</span></div></div>{% endfor %}</div>{% else %}<p class="muted">No post titles are available for the selected data.</p>{% endif %}
   </article>
 </section>
+<div class="insights-actions">
+  <a class="button button-dark" href="{% url 'analytics:dashboard' %}">Clear &amp; return to dashboard</a>
+</div>
 {% if period_series %}
 <section class="panel chart-panel insights-trend">
   <div class="panel-heading"><div><div class="section-kicker">REPORTING PERIODS</div><h2>Follower growth trend</h2></div></div>

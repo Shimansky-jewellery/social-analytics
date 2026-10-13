@@ -136,7 +136,13 @@ class CsvImportTests(TestCase):
         self.assertEqual(dashboard.context["kpis"]["views"], 600)
         self.assertEqual(dashboard.context["kpis"]["engagement_rate"], 7.0)
         self.assertContains(self.client.get(reverse("analytics:comparison")), "Reported performance")
-        self.assertContains(self.client.get(reverse("analytics:insights")), "Channel highlights")
+        insights = self.client.get(reverse("analytics:insights"))
+        self.assertContains(insights, "Channel highlights")
+        self.assertContains(insights, "Clear &amp; return to dashboard")
+        self.assertContains(
+            insights,
+            f'href="{reverse("analytics:dashboard")}"',
+        )
         filtered = self.client.get(
             reverse("analytics:dashboard"),
             {"start_date": "2026-09-01", "end_date": "2026-09-01"},
