@@ -7,4 +7,5 @@ urlpatterns = [
     path("import/", views.import_sheet, name="import_sheet"),
     path("channels/", views.channel_comparison, name="comparison"),
     path("insights/", views.insights_page, name="insights"),
+    path("clear-data/", views.clear_data, name="clear_data"),
 ]

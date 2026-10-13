@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Social Insights{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'analytics/css/app.css' %}">
+  <link rel="stylesheet" href="{% static 'analytics/css/sidebar-actions.css' %}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -17,6 +18,12 @@
       <a class="nav-link {% if request.resolver_match.url_name == 'import_sheet' %}active{% endif %}" href="{% url 'analytics:import_sheet' %}">↥ <span>Import data</span></a>
       <a class="nav-link {% if request.resolver_match.url_name == 'comparison' %}active{% endif %}" href="{% url 'analytics:comparison' %}">⇄ <span>Channel comparison</span></a>
       <a class="nav-link {% if request.resolver_match.url_name == 'insights' %}active{% endif %}" href="{% url 'analytics:insights' %}">✳ <span>Insightss</span></a>
+      <form class="sidebar-clear-form" method="post" action="{% url 'analytics:clear_data' %}" onsubmit="return confirm('Clear all imported social media data? This cannot be undone.');">
+        {% csrf_token %}
+        <button class="nav-link clear-data-button" type="submit" title="Clear all imported dashboard data">
+          <span class="clear-icon" aria-hidden="true">×</span><span>Clear dashboard data</span>
+        </button>
+      </form>
       <div class="sidebar-note"><strong>Manual refresh</strong><p>Upload a CSV export or import a shared Google Sheet.</p></div>
     </aside>
     <main class="main-area">

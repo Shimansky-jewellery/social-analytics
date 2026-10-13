@@ -153,3 +153,24 @@ class CsvImportTests(TestCase):
         SocialMetric.objects.create(channel="</script>", period="2026-09-01", views=2)
         response = self.client.get(reverse("analytics:dashboard"))
         self.assertContains(response, r"\u003C/script\u003E")
+
+    def test_clear_data_post_removes_all_imported_records_and_returns_to_empty_dashboard(self):
+        SocialMetric.objects.create(channel="Instagram", period="2026-09", views=100)
+        SocialMetric.objects.create(channel="TikTok", period="2026-09", views=200)
+
+        response = self.client.post(reverse("analytics:clear_data"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("analytics:dashboard"))
+        self.assertEqual(SocialMetric.objects.count(), 0)
+        dashboard = self.client.get(response.url)
+        self.assertContains(dashboard, "Your insights start here")
+        self.assertContains(dashboard, "Cleared 2 imported social media record(s).")
+
+    def test_clear_data_rejects_get_requests(self):
+        SocialMetric.objects.create(channel="Instagram", period="2026-09", views=100)
+
+        response = self.client.get(reverse("analytics:clear_data"))
+
+        self.assertEqual(response.status_code, 405)
+        self.assertEqual(SocialMetric.objects.count(), 1)

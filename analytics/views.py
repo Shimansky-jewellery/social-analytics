@@ -3,8 +3,8 @@ import logging
 import pandas as pd
 from django.contrib import messages
 from django.db import transaction
-from django.shortcuts import render
-from django.views.decorators.http import require_http_methods
+from django.shortcuts import redirect, render
+from django.views.decorators.http import require_http_methods, require_POST
 
 from .models import SocialMetric
 from .services.csv_import import CsvImportError, process_csv_upload
@@ -199,6 +199,16 @@ def insights_page(request):
         ),
     }
     return render(request, "analytics/insights.html", context)
+
+
+@require_POST
+def clear_data(request):
+    deleted_count, _ = SocialMetric.objects.all().delete()
+    if deleted_count:
+        messages.success(request, f"Cleared {deleted_count} imported social media record(s).")
+    else:
+        messages.info(request, "There is no imported data to clear.")
+    return redirect("analytics:dashboard")
 
 
 def _save_import(processed):
