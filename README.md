@@ -15,7 +15,7 @@ The database identifies a record by `(Channel, Period)`. Existing records and re
 
 The insights page compares the two latest parseable reporting dates and flags changes of 20% or more. If dates cannot be parsed or fewer than two periods are available, no period-change conclusion is shown.
 
-## Google Sheets URL import
+## Google Sheets URL import ( does not work yet)
 
 The sheet must be accessible without signing in, or be published to the web. A normal private Google sharing link cannot be read by this simple link importer without Google OAuth/API credentials.
 
@@ -63,6 +63,10 @@ python manage.py migrate
 ```
 
 Configure Vercel to serve the Django project using `config.wsgi:application`. Database provisioning and deployment configuration remain in the PostgreSQL provider and Vercel project; this repository contains no database credentials.
+
+### Static assets on Vercel
+
+`STATIC_ROOT` is set to `staticfiles/` and `STATIC_URL` to `/static/`. Vercel's Django runtime detects `STATIC_ROOT`, runs `collectstatic` during deployment, and serves the collected assets from its CDN. No separate build script, custom static route, or WhiteNoise middleware is needed for this Vercel setup. The stylesheet is stored at `analytics/static/analytics/css/app.css` and is discovered by Django's app static-files finder.
 
 ## Expected columns
 

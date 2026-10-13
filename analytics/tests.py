@@ -131,6 +131,7 @@ class CsvImportTests(TestCase):
         )
         dashboard = self.client.get(reverse("analytics:dashboard"))
         self.assertContains(dashboard, "Total views")
+        self.assertContains(dashboard, 'href="/static/analytics/css/app.css"')
         self.assertContains(dashboard, "Profile visits")
         self.assertEqual(dashboard.context["kpis"]["views"], 600)
         self.assertEqual(dashboard.context["kpis"]["engagement_rate"], 7.0)

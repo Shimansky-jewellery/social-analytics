@@ -1,10 +1,11 @@
 <!doctype html>
+{% load static %}
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Social Insights{% endblock %}</title>
-  <link rel="stylesheet" href="{% load static %}{% static 'analytics/css/app.css' %}">
+  <link rel="stylesheet" href="{% static 'analytics/css/app.css' %}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
