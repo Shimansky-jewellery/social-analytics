@@ -1,0 +1,96 @@
+{% extends "analytics/base.html" %}
+{% block title %}Audience · Social Insights{% endblock %}
+{% block page_heading %}Audience insights{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span>{% if selected_snapshot %}Snapshot: {{ selected_snapshot }}{% else %}Audience snapshots{% endif %}</span>
+  <form method="get" class="filter-form">
+    <label for="channel">Channel</label>
+    <select name="channel" id="channel" onchange="this.form.submit()">
+      {% for channel in channels %}<option value="{{ channel }}" {% if selected_channel == channel %}selected{% endif %}>{{ channel }}</option>{% endfor %}
+    </select>
+    <label for="snapshot_date">Snapshot</label>
+    <select name="snapshot_date" id="snapshot_date">
+      {% for snapshot in snapshots %}<option value="{{ snapshot|date:'Y-m-d' }}" {% if selected_snapshot == snapshot|date:'Y-m-d' %}selected{% endif %}>{{ snapshot|date:"j M Y" }}</option>{% endfor %}
+    </select>
+    <button class="button button-dark" type="submit">View</button>
+  </form>
+  <a class="button button-outline" href="{% url 'analytics:import_audience' %}">Import audience CSV</a>
+  <form method="post" action="{% url 'analytics:clear_audience_data' %}" onsubmit="return confirm('Clear all audience data? This cannot be undone.');">
+    {% csrf_token %}
+    <button class="button button-outline" type="submit">Clear audience</button>
+  </form>
+</div>
+{% if not channels %}<p class="message warning">No audience data has been imported yet.</p>{% endif %}
+<section class="chart-grid">
+  <article class="panel chart-panel">
+    <div class="panel-heading"><div><div class="section-kicker">LOCATIONS</div><h2>Country</h2></div></div>
+    {% if categories.Country %}<div class="chart-wrap"><canvas id="countryChart"></canvas></div><p class="muted small">Top locations only; values may not add up to 100%.</p>{% else %}<p class="muted">No data for this channel.</p>{% endif %}
+  </article>
+  <article class="panel chart-panel">
+    <div class="panel-heading"><div><div class="section-kicker">LOCATIONS</div><h2>City</h2></div></div>
+    {% if categories.City %}<div class="chart-wrap"><canvas id="cityChart"></canvas></div><p class="muted small">Top locations only; values may not add up to 100%.</p>{% else %}<p class="muted">No data for this channel.</p>{% endif %}
+  </article>
+  <article class="panel chart-panel">
+    <div class="panel-heading"><div><div class="section-kicker">AGE BREAKDOWN</div><h2>Age &amp; Gender</h2></div></div>
+    {% if has_age_gender %}<div class="chart-wrap"><canvas id="ageChart"></canvas></div>{% else %}<p class="muted">No data for this channel.</p>{% endif %}
+  </article>
+  <article class="panel chart-panel">
+    <div class="panel-heading"><div><div class="section-kicker">GENDER</div><h2>Gender</h2></div></div>
+    {% if categories.Gender %}<div class="chart-wrap"><canvas id="genderChart"></canvas></div>{% else %}<p class="muted">No data for this channel.</p>{% endif %}
+  </article>
+  <article class="panel chart-panel chart-wide">
+    <div class="panel-heading"><div><div class="section-kicker">FOLLOWER ACTIVITY</div><h2>Active Followers by Hour</h2></div></div>
+    {% if has_active_hours %}<div class="chart-wrap"><canvas id="hoursChart"></canvas></div>{% else %}<p class="muted">No data for this channel.</p>{% endif %}
+  </article>
+</section>
+{{ chart_data|json_script:"audience-chart-data" }}
+<script>
+const audienceData = JSON.parse(document.getElementById('audience-chart-data').textContent);
+const percentTooltip = units => context => {
+  const value = context.parsed.x ?? context.parsed.y;
+  return `${context.dataset.label ? context.dataset.label + ': ' : ''}${value}${units[context.dataIndex] === '%' ? '%' : ''}`;
+};
+const palette = ['#635bff', '#13a88a', '#f59e0b', '#ec4899', '#0ea5e9', '#8b5cf6', '#64748b'];
+const horizontalOptions = units => ({
+  indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+  plugins: {legend: {display: false}, tooltip: {callbacks: {label: percentTooltip(units)}}},
+  scales: {x: {beginAtZero: true}, y: {grid: {display: false}}}
+});
+if (document.getElementById('countryChart')) {
+  new Chart(document.getElementById('countryChart'), {
+    type: 'bar',
+    data: {labels: audienceData.country.map(item => item.label), datasets: [{data: audienceData.country.map(item => item.value), backgroundColor: '#635bff', borderRadius: 7}]},
+    options: horizontalOptions(audienceData.country.map(item => item.unit))
+  });
+}
+if (document.getElementById('cityChart')) {
+  new Chart(document.getElementById('cityChart'), {
+    type: 'bar',
+    data: {labels: audienceData.city.map(item => item.label), datasets: [{data: audienceData.city.map(item => item.value), backgroundColor: '#13a88a', borderRadius: 7}]},
+    options: horizontalOptions(audienceData.city.map(item => item.unit))
+  });
+}
+if (document.getElementById('ageChart')) {
+  new Chart(document.getElementById('ageChart'), {
+    type: 'bar',
+    data: {labels: audienceData.age.labels, datasets: audienceData.age.datasets.map((dataset, index) => ({...dataset, backgroundColor: palette[index % palette.length], borderRadius: 5}))},
+    options: {responsive: true, maintainAspectRatio: false, plugins: {tooltip: {callbacks: {label: context => `${context.dataset.label}: ${context.parsed.y}${context.dataset.units[context.dataIndex] === '%' ? '%' : ''}`}}}, scales: {y: {beginAtZero: true}}}
+  });
+}
+if (document.getElementById('genderChart')) {
+  new Chart(document.getElementById('genderChart'), {
+    type: 'doughnut',
+    data: {labels: audienceData.gender.map(item => item.label), datasets: [{data: audienceData.gender.map(item => item.value), backgroundColor: palette}]},
+    options: {responsive: true, maintainAspectRatio: false, plugins: {tooltip: {callbacks: {label: context => `${context.label}: ${context.parsed}${audienceData.gender[context.dataIndex].unit === '%' ? '%' : ''}`}}}}
+  });
+}
+if (document.getElementById('hoursChart')) {
+  new Chart(document.getElementById('hoursChart'), {
+    type: 'line',
+    data: {labels: audienceData.hours.labels, datasets: [{label: 'Active followers', data: audienceData.hours.values, borderColor: '#635bff', backgroundColor: '#635bff', tension: .3, spanGaps: false}]},
+    options: {responsive: true, maintainAspectRatio: false, plugins: {tooltip: {callbacks: {label: context => `${context.parsed.y}${audienceData.hours.units[context.dataIndex] === '%' ? '%' : ''}`}}}, scales: {y: {beginAtZero: true}}}
+  });
+}
+</script>
+{% endblock %}

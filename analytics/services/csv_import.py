@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from io import BytesIO
 import math
 import re
@@ -60,6 +61,44 @@ class ProcessedImport:
     frame: pd.DataFrame
     rejected: list[dict]
     warnings: list[str]
+    total_rows: int
+
+
+AD_CSV_HEADERS = (
+    "Platform",
+    "Period Start",
+    "Period End",
+    "Ad Name",
+    "Ad Set",
+    "Status",
+    "Amount Spent (ZAR)",
+    "Impressions",
+    "Reach",
+    "Frequency",
+    "CPM (ZAR)",
+    "Results",
+    "Result Type",
+    "Cost per Result (ZAR)",
+    "Quality Ranking",
+    "Engagement Rate Ranking",
+    "Conversion Rate Ranking",
+)
+
+AD_NUMERIC_FIELDS = {
+    "Amount Spent (ZAR)": ("amount_spent", "decimal"),
+    "Impressions": ("impressions", "integer"),
+    "Reach": ("reach", "integer"),
+    "Frequency": ("frequency", "float"),
+    "CPM (ZAR)": ("cpm", "decimal"),
+    "Results": ("results", "float"),
+    "Cost per Result (ZAR)": ("cost_per_result", "decimal"),
+}
+
+
+@dataclass
+class ProcessedAdImport:
+    rows: list[dict]
+    rejected: list[dict]
     total_rows: int
 
 
@@ -227,3 +266,106 @@ def process_csv_upload(upload):
             "The file could not be read as a CSV. Check its encoding and column structure."
         ) from exc
     return process_dataframe(frame)
+
+
+def process_ad_csv_upload(upload):
+    if not upload.name.lower().endswith(".csv"):
+        raise CsvImportError("Choose an ads file with a .csv extension.")
+    if upload.size > MAX_UPLOAD_BYTES:
+        raise CsvImportError("The CSV file is too large. The maximum upload size is 8 MB.")
+    content = upload.read(MAX_UPLOAD_BYTES + 1)
+    if not content:
+        raise CsvImportError("The selected CSV file is empty.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise CsvImportError("The CSV file is too large. The maximum upload size is 8 MB.")
+    try:
+        frame = pd.read_csv(BytesIO(content), encoding="utf-8-sig", keep_default_na=False)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        raise CsvImportError(
+            "The file could not be read as a CSV. Check its encoding and column structure."
+        ) from exc
+
+    if tuple(frame.columns) != AD_CSV_HEADERS:
+        missing = [header for header in AD_CSV_HEADERS if header not in frame.columns]
+        extra = [str(header) for header in frame.columns if header not in AD_CSV_HEADERS]
+        details = []
+        if missing:
+            details.append("missing headers: " + ", ".join(missing))
+        if extra:
+            details.append("unexpected headers: " + ", ".join(extra))
+        if not details:
+            details.append("headers must match the required names and order")
+        raise CsvImportError("Invalid ads CSV headers (" + "; ".join(details) + ").")
+    if frame.empty:
+        raise CsvImportError("The file has headers but no data rows.")
+
+    rows = []
+    rejected = []
+    for index, source_row in frame.iterrows():
+        line_number = index + 2
+        row = {
+            "platform": str(source_row["Platform"]).strip(),
+            "ad_name": str(source_row["Ad Name"]).strip(),
+            "ad_set": str(source_row["Ad Set"]).strip(),
+            "status": str(source_row["Status"]).strip(),
+            "result_type": str(source_row["Result Type"]).strip(),
+            "quality_ranking": str(source_row["Quality Ranking"]).strip(),
+            "engagement_rate_ranking": str(source_row["Engagement Rate Ranking"]).strip(),
+            "conversion_rate_ranking": str(source_row["Conversion Rate Ranking"]).strip(),
+        }
+        errors = []
+        for field, label, maximum in (
+            ("platform", "Platform", 100),
+            ("ad_name", "Ad Name", 255),
+        ):
+            if not row[field] or row[field].lower() in {"nan", "none", "null"}:
+                errors.append(f"{label} is required")
+            elif len(row[field]) > maximum:
+                errors.append(f"{label} must be {maximum} characters or fewer")
+        for field, label, maximum in (
+            ("ad_set", "Ad Set", 255),
+            ("status", "Status", 50),
+            ("result_type", "Result Type", 255),
+            ("quality_ranking", "Quality Ranking", 100),
+            ("engagement_rate_ranking", "Engagement Rate Ranking", 100),
+            ("conversion_rate_ranking", "Conversion Rate Ranking", 100),
+        ):
+            if len(row[field]) > maximum:
+                errors.append(f"{label} must be {maximum} characters or fewer")
+
+        for header, field in (("Period Start", "period_start"), ("Period End", "period_end")):
+            raw_date = str(source_row[header]).strip()
+            parsed_date = pd.to_datetime(raw_date, errors="coerce", format="mixed")
+            if not raw_date or pd.isna(parsed_date):
+                errors.append(f"{header} is required and must be a valid date")
+            else:
+                row[field] = parsed_date.date()
+        if "period_start" in row and "period_end" in row and row["period_start"] > row["period_end"]:
+            errors.append("Period Start must not be after Period End")
+
+        for header, (field, kind) in AD_NUMERIC_FIELDS.items():
+            try:
+                value = _parse_number(source_row[header])
+                if value is None:
+                    row[field] = None
+                elif kind == "integer":
+                    if not value.is_integer():
+                        raise ValueError(f"{source_row[header]!s} must be a whole number")
+                    row[field] = int(value)
+                elif kind == "decimal":
+                    decimal_value = Decimal(str(value))
+                    quantized = decimal_value.quantize(Decimal("0.01"))
+                    if quantized != decimal_value:
+                        raise ValueError(f"{source_row[header]!s} must have at most 2 decimal places")
+                    row[field] = quantized
+                else:
+                    row[field] = value
+            except (ValueError, ArithmeticError) as exc:
+                errors.append(f"{header}: {exc}")
+
+        if errors:
+            rejected.append({"line": line_number, "errors": errors})
+        else:
+            rows.append(row)
+
+    return ProcessedAdImport(rows=rows, rejected=rejected, total_rows=len(frame))

@@ -23,9 +23,9 @@
 <section class="panel comparison-table-wrap">
   <div class="panel-heading"><div><div class="section-kicker">SUMMARY TABLE</div><h2>Reported performance</h2></div></div>
   <div class="table-scroll"><table class="comparison-table"><thead><tr><th>Channel</th>{% for metric in metrics %}<th>{{ metric.label }}</th>{% endfor %}</tr></thead><tbody>
-  {% for channel in comparison_channels %}<tr><th>{{ channel }}</th>{% for metric in metrics %}{% for item in metric.values %}{% if item.channel == channel %}<td>{% if item.value is not None %}{% if metric.key == 'engagement_rate' %}{{ item.value|floatformat:2 }}%{% else %}{{ item.value|floatformat:0|intcomma }}{% endif %}{% else %}—{% endif %}</td>{% endif %}{% endfor %}{% endfor %}</tr>{% empty %}<tr><td colspan="9">No metrics match the selected filters.</td></tr>{% endfor %}
+  {% for channel in comparison_channels %}<tr><th>{{ channel }}</th>{% for metric in metrics %}{% for item in metric.values %}{% if item.channel == channel %}<td>{% if item.value is not None %}{% if metric.key == 'engagement_rate' or metric.key == 'ctr' %}{{ item.value|floatformat:2 }}%{% else %}{{ item.value|floatformat:0|intcomma }}{% endif %}{% else %}—{% endif %}</td>{% endif %}{% endfor %}{% endfor %}</tr>{% empty %}<tr><td colspan="10">No metrics match the selected filters.</td></tr>{% endfor %}
   </tbody></table></div>
-  <p class="muted small">Engagement rate is an arithmetic average of reported percentages; other metrics are totals. Blank metrics are excluded, not treated as zero.</p>
+  <p class="muted small">Engagement rate and CTR are arithmetic averages of reported percentages; other metrics are totals. Blank metrics are excluded, not treated as zero.</p>
 </section>
 {% else %}
 <section class="empty-state panel"><div class="empty-icon">⇄</div><h2>No data to compare</h2><p>Import CSV data to see a comparison of your channels.</p><a class="button button-dark" href="{% url 'analytics:import_sheet' %}">Import data →</a></section>

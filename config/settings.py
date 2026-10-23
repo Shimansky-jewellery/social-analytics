@@ -75,7 +75,7 @@ TEMPLATES = [{
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-database_url = os.environ.get("DATABASE_URL", "").strip()
+database_url = ""#os.environ.get("DATABASE_URL", "").strip()
 if IS_VERCEL and not database_url:
     raise ImproperlyConfigured(
         "DATABASE_URL must point to a persistent PostgreSQL database configured in Vercel."

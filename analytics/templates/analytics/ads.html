@@ -1,0 +1,38 @@
+{% extends "analytics/base.html" %}
+{% load humanize %}
+{% block title %}Ad Performance · Social Insights{% endblock %}
+{% block page_heading %}Ad performance{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span>{{ ads|length }} ad records</span>
+  <a class="button button-dark" href="{% url 'analytics:import_ads' %}">Import ads CSV</a>
+  <form method="post" action="{% url 'analytics:clear_ads_data' %}" onsubmit="return confirm('Clear all ad performance data? This cannot be undone.');">
+    {% csrf_token %}
+    <button class="button button-outline" type="submit">Clear ads</button>
+  </form>
+</div>
+<section class="kpi-grid">
+  <article class="kpi-card"><div class="kpi-label">Total spend</div><div class="kpi-value">{% if total_spend is not None %}R {{ total_spend|floatformat:2|intcomma }}{% else %}—{% endif %}</div><div class="kpi-foot">ZAR across imported ads</div></article>
+  <article class="kpi-card"><div class="kpi-label">Total impressions</div><div class="kpi-value">{{ total_impressions|default_if_none:"—"|intcomma }}</div><div class="kpi-foot">Reported impressions</div></article>
+</section>
+<section class="panel comparison-table-wrap">
+  <div class="panel-heading"><div><div class="section-kicker">AD RESULTS</div><h2>Reported ad performance</h2></div></div>
+  <div class="table-scroll"><table class="comparison-table">
+    <thead><tr><th>Platform</th><th>Period</th><th>Ad name</th><th>Ad set</th><th>Status</th><th>Spend (ZAR)</th><th>Impressions</th><th>Reach</th><th>Frequency</th><th>CPM (ZAR)</th><th>Results</th><th>Result type</th><th>Cost per result (ZAR)</th><th>Quality ranking</th><th>Engagement rate ranking</th><th>Conversion rate ranking</th></tr></thead>
+    <tbody>
+      {% for ad in ads %}
+      <tr>
+        <th>{{ ad.platform }}</th><td>{{ ad.period_start }} – {{ ad.period_end }}</td><td>{{ ad.ad_name }}</td><td>{{ ad.ad_set|default:"—" }}</td><td>{{ ad.status|default:"—" }}</td>
+        <td>{% if ad.amount_spent is not None %}{{ ad.amount_spent|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+        <td>{{ ad.impressions|default_if_none:"—"|intcomma }}</td><td>{{ ad.reach|default_if_none:"—"|intcomma }}</td>
+        <td>{{ ad.frequency|default_if_none:"—" }}</td>
+        <td>{% if ad.cpm is not None %}{{ ad.cpm|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+        <td>{{ ad.results|default_if_none:"—" }}</td><td>{{ ad.result_type|default:"—" }}</td>
+        <td>{% if ad.cost_per_result is not None %}{{ ad.cost_per_result|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+        <td>{{ ad.quality_ranking|default:"—" }}</td><td>{{ ad.engagement_rate_ranking|default:"—" }}</td><td>{{ ad.conversion_rate_ranking|default:"—" }}</td>
+      </tr>
+      {% empty %}<tr><td colspan="16">No ad performance data has been imported.</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

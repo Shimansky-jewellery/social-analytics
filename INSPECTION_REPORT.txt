@@ -1,0 +1,302 @@
+SOCIAL INSIGHTS DJANGO — READ-ONLY INSPECTION REPORT
+Inspected: 2026-10-22
+
+1. MODELS
+
+File: analytics/models.py
+
+Full model code:
+
+from django.db import models
+
+#mdole to collect social media fields
+class SocialMetric(models.Model):
+    channel = models.CharField(max_length=100, db_index=True)
+    period = models.CharField(max_length=100, db_index=True)
+    follower_growth = models.FloatField(default=0, null=True, blank=True)
+    reach = models.FloatField(default=0, null=True, blank=True)
+    views = models.FloatField(default=0, null=True, blank=True)
+    engagement_rate = models.FloatField(default=0, null=True, blank=True)
+    content_interactions = models.FloatField(default=0, null=True, blank=True)
+    ctr = models.FloatField(default=0, null=True, blank=True)
+    profile_visits = models.FloatField(default=0, null=True, blank=True)
+    link_clicks = models.FloatField(default=0, null=True, blank=True)
+    leads = models.FloatField(default=0, null=True, blank=True)
+    top_performing_post = models.TextField(blank=True)
+    imported_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["period", "channel"]
+        constraints = [
+            models.UniqueConstraint(fields=["channel", "period"], name="unique_channel_period")
+        ]
+
+    def __str__(self):
+        return f"{self.channel} — {self.period}"
+
+Field definitions:
+- channel: CharField; null=False, blank=False; max_length=100.
+- period: CharField; null=False, blank=False; max_length=100.
+- follower_growth: FloatField; null=True, blank=True; default=0.
+- reach: FloatField; null=True, blank=True; default=0.
+- views: FloatField; null=True, blank=True; default=0.
+- engagement_rate: FloatField; null=True, blank=True; default=0.
+- content_interactions: FloatField; null=True, blank=True; default=0.
+- ctr: FloatField; null=True, blank=True; default=0.
+- profile_visits: FloatField; null=True, blank=True; default=0.
+- link_clicks: FloatField; null=True, blank=True; default=0.
+- leads: FloatField; null=True, blank=True; default=0.
+- top_performing_post: TextField; null=False, blank=True.
+- imported_at: DateTimeField; null=False, blank=False; auto_now=True.
+
+There are no DecimalField fields, so decimal_places does not apply. There is
+no unique_together. Meta ordering is ["period", "channel"]. A UniqueConstraint
+named "unique_channel_period" covers ("channel", "period").
+
+There are no other app-defined models for audience, demographics, countries,
+ads, or uploads.
+
+2. IMPORTER
+
+Files: analytics/services/csv_import.py,
+analytics/services/google_sheets.py, analytics/views.py
+
+Header aliases:
+
+COLUMN_ALIASES = {
+    "channel": {"channel", "social media channel"},
+    "period": {"period", "reporting period", "date", "reporting date"},
+    "follower_growth": {"follower growth", "followers growth", "follower growths"},
+    "reach": {"reach"},
+    "views": {"views"},
+    "engagement_rate": {"engagement rate", "engagement rate (%)", "engagement rate %"},
+    "content_interactions": {"content interactions", "interactions"},
+    "ctr": {
+        "click-through rate (ctr) (%)",
+        "click through rate (ctr) (%)",
+        "click-through rate (%)",
+        "click through rate (%)",
+        "ctr (%)",
+        "ctr %",
+        "ctr",
+    },
+    "profile_visits": {"profile visits"},
+    "link_clicks": {"link clicks"},
+    "leads": {
+        "dms/leads generated",
+        "dms / leads generated",
+        "dms leads generated",
+        "leads generated",
+        "dms/leads",
+        "dms / leads",
+    },
+    "top_performing_post": {"top performing post", "top-performing post"},
+}
+
+Required columns are Channel (aliases: "channel", "social media channel") and
+Period (aliases: "period", "reporting period", "date", "reporting date"). A
+missing required header raises CsvImportError. Blank Channel or Period values
+reject that row.
+
+Headers are normalized by stripping, lowercasing, and collapsing whitespace.
+Duplicate normalized headings are rejected. If multiple populated columns map
+to the same field, the import is rejected. Unknown columns containing data are
+rejected; empty unknown columns are ignored with a warning.
+
+Numeric parsing:
+
+def _parse_number(value):
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    if text.lower() in {"", "nan", "none", "null", "-", "n/a", "na"}:
+        return None
+    text = text.replace(",", "").replace("%", "").replace("R", "").strip()
+    try:
+        number = pd.to_numeric(text, errors="raise")
+    except (ValueError, TypeError):
+        raise ValueError(f"{value!s} is not a valid number")
+    if not pd.notna(number):
+        return None
+    number = float(number)
+    if not math.isfinite(number):
+        raise ValueError(f"{value!s} must be a finite number")
+    return number
+
+Blank numeric cells and the strings "", "nan", "none", "null", "-", "n/a",
+and "na" are treated as None and saved as SQL NULL. Invalid numeric values
+reject their row. A literal "%" is stripped; nothing is multiplied by 100.
+Thus "6.5%" is stored as 6.5, while 0.065 remains 0.065.
+
+Period parsing:
+
+def _parse_period(value):
+    text = str(value).strip()
+    parsed = pd.to_datetime(text, errors="coerce", format="mixed")
+    if pd.isna(parsed):
+        return text
+    if isinstance(parsed, pd.Timestamp):
+        return parsed.date().isoformat()
+    if isinstance(parsed, date):
+        return parsed.isoformat()
+    return text
+
+Period is stored in a CharField. Parseable dates are normalized to ISO format;
+unparseable values, such as "Week 1", remain text.
+
+CSV reader:
+
+def process_csv_upload(upload):
+    if not upload.name.lower().endswith(".csv"):
+        raise CsvImportError("Choose a file with a .csv extension.")
+    if upload.size > MAX_UPLOAD_BYTES:
+        raise CsvImportError("The CSV file is too large. The maximum upload size is 8 MB.")
+    content = upload.read(MAX_UPLOAD_BYTES + 1)
+    if not content:
+        raise CsvImportError("The selected CSV file is empty.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise CsvImportError("The CSV file is too large. The maximum upload size is 8 MB.")
+    try:
+        frame = pd.read_csv(BytesIO(content), encoding="utf-8-sig", keep_default_na=False)
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        raise CsvImportError(
+            "The file could not be read as a CSV. Check its encoding and column structure."
+        ) from exc
+    return process_dataframe(frame)
+
+Google Sheets URL conversion:
+
+def to_csv_export_url(shared_url: str) -> str:
+    """Convert a standard Google Sheets URL to a CSV export URL."""
+    parsed = urlparse(shared_url.strip())
+    if parsed.scheme != "https" or parsed.hostname not in {"docs.google.com"}:
+        raise SheetImportError("Please provide an HTTPS Google Sheets link from docs.google.com.")
+    parts = [p for p in parsed.path.split("/") if p]
+    try:
+        spreadsheet_index = parts.index("spreadsheets")
+        if parts[spreadsheet_index + 1] != "d":
+            raise ValueError
+        sheet_id = parts[spreadsheet_index + 2]
+    except (ValueError, IndexError):
+        raise SheetImportError("That link doesn't look like a Google Sheets spreadsheet URL.")
+    if not sheet_id or not all(c.isalnum() or c in "-_" for c in sheet_id):
+        raise SheetImportError("The spreadsheet ID in that link is invalid.")
+
+    query = parse_qs(parsed.query)
+    gid = query.get("gid", ["0"])[0]
+    if not gid.isdigit():
+        gid = "0"
+    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+
+The Sheets reader downloads that CSV export (8 MB maximum; 15-second timeout;
+redirects rejected), parses it with pandas, and passes it through the same
+dataframe validation as uploaded CSVs. The import view accepts either a
+"csv_file" upload or a "sheet_url" POST value.
+
+Duplicate handling is not update_or_create or get_or_create. Before bulk_create,
+the code compares channel and canonicalized period against existing rows and
+against duplicate keys in the current upload. Matches are skipped, not
+overwritten. The database also enforces uniqueness on raw channel and period.
+
+3. DASHBOARD AND PAGES
+
+Root URL configuration (config/urls.py):
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("", include("analytics.urls")),
+]
+
+Analytics URL configuration (analytics/urls.py):
+
+urlpatterns = [
+    path("", views.dashboard, name="dashboard"),
+    path("import/", views.import_sheet, name="import_sheet"),
+    path("channels/", views.channel_comparison, name="comparison"),
+    path("insights/", views.insights_page, name="insights"),
+    path("clear-data/", views.clear_data, name="clear_data"),
+]
+
+Routes and views:
+- /admin/ -> Django admin.
+- / -> dashboard.
+- /import/ -> import_sheet.
+- /channels/ -> channel_comparison.
+- /insights/ -> insights_page.
+- /clear-data/ -> clear_data (POST only).
+
+Dashboard, channel comparison, and insights use _apply_filters. It filters by
+channel and optional start_date/end_date query parameters. Period strings are
+parsed to dates for date filtering. While a date range is active, rows whose
+period cannot be parsed are excluded.
+
+Aggregation behavior:
+- Dashboard KPI metrics: sums for follower_growth, reach, views,
+  content_interactions, profile_visits, link_clicks, and leads.
+- Dashboard engagement_rate KPI: arithmetic mean.
+- Comparison: per-channel sum for those non-engagement metrics; per-channel
+  arithmetic mean for engagement_rate.
+- Dashboard charts: views summed per channel and period; reach and leads summed
+  per channel; engagement_rate averaged per channel.
+- Insights: views, reach, and leads summed per channel; engagement_rate
+  averaged per channel. Period-change logic sums follower_growth and views by
+  period.
+- ctr is not in METRIC_FIELDS, so it is imported/stored but not included in
+  these KPI/comparison aggregations.
+
+Dashboard engagement display adds a percent sign:
+
+{{ kpis.engagement_rate|default_if_none:"—"|floatformat:2 }}{% if kpis.engagement_rate is not None %}<span class="unit">%</span>{% endif %}
+
+Comparison template appends "%" to engagement_rate values. Engagement chart
+tooltips use the "%" suffix. Top-performing-post displays also append "%" to
+engagement_rate. No CTR display was found in the inspected dashboard,
+comparison, or insights templates.
+
+There is no audience/demographics or countries page/model.
+
+4. VERSIONS AND MIGRATIONS
+
+requirements.txt version ranges:
+- Django>=5.1,<6.0
+- pandas>=2.2,<4.0
+
+These are allowed ranges, not exact installed versions. The latest migration's
+generated comment records Django 5.2.18.
+
+Migration files:
+- analytics/migrations/0001_initial.py
+- analytics/migrations/0002_alter_socialmetric_content_interactions_and_more.py
+- analytics/migrations/__init__.py
+
+Latest migration: 0002_alter_socialmetric_content_interactions_and_more.py
+
+5. EXISTING DATA (READ-ONLY)
+
+The SQLite database was reachable. Distinct Period values and row counts:
+- Week 1: 4
+- Week 2: 4
+- Week 3: 4
+- Week 4: 4
+
+Rows per Channel:
+- Facebook: 4
+- Instagram: 4
+- Pinterest: 4
+- TikTok: 4
+
+6. OBSERVED INCONSISTENCIES
+
+- Existing periods "Week 1" through "Week 4" are text and are not parseable
+  dates. Date range filtering excludes these rows while a range is active, and
+  date-based period-change insights cannot use them.
+- CTR is imported and stored, but is excluded from METRIC_FIELDS and has no
+  display in the inspected templates.
+- Percentage strings have "%" removed but are not scaled. A fraction such as
+  0.065 is displayed as 0.065% where the template adds a percent sign.
+- The insights page button says "Clear & return to dashboard" but links to the
+  dashboard route; it does not call the clear-data view.
+- The sidebar label in analytics/templates/analytics/base.html is "Insightss".
+
+This report records findings only. No database records were changed, and no
+application code was modified.

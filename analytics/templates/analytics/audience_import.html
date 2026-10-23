@@ -1,0 +1,30 @@
+{% extends "analytics/base.html" %}
+{% block title %}Import Audience · Social Insights{% endblock %}
+{% block page_heading %}Import audience data{% endblock %}
+{% block content %}
+{% if result %}
+<section class="panel import-summary">
+  <div class="section-kicker">IMPORT SUMMARY</div>
+  <h2>Audience import complete</h2>
+  <div class="summary-grid">
+    <div><strong>{{ result.created }}</strong><span>Created</span></div>
+    <div><strong>{{ result.skipped }}</strong><span>Skipped (duplicates)</span></div>
+    <div><strong>{{ result.rejected }}</strong><span>Rejected</span></div>
+  </div>
+  <p class="muted small">{{ result.total }} data rows processed. Existing audience records were preserved.</p>
+  {% if result.rejections %}<h3>Rows needing attention</h3><ul class="validation-list">{% for rejection in result.rejections %}<li>CSV line {{ rejection.line }}: {{ rejection.errors|join:", " }}</li>{% endfor %}</ul>{% if result.more_rejections %}<p class="muted small">And {{ result.more_rejections }} more rejected rows.</p>{% endif %}{% endif %}
+  <a class="button button-dark" href="{% url 'analytics:audience' %}">View audience insights →</a>
+</section>
+{% endif %}
+<section class="panel import-panel">
+  <div class="section-kicker">AUDIENCE DATA</div>
+  <h2>Upload an audience CSV file</h2>
+  <p class="muted">Use these exact headers in this order: Channel, Snapshot Date, Category, Label, Segment, Value, Unit. Maximum file size: 8 MB.</p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label for="audience_csv_file">Audience CSV file</label>
+    <input id="audience_csv_file" name="audience_csv_file" type="file" accept=".csv,text/csv" required>
+    <button class="button button-dark" type="submit">Import audience</button>
+  </form>
+</section>
+{% endblock %}

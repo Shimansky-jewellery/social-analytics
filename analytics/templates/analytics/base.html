@@ -17,7 +17,9 @@
       <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'analytics:dashboard' %}">▦ <span>Dashboard</span></a>
       <a class="nav-link {% if request.resolver_match.url_name == 'import_sheet' %}active{% endif %}" href="{% url 'analytics:import_sheet' %}">↥ <span>Import data</span></a>
       <a class="nav-link {% if request.resolver_match.url_name == 'comparison' %}active{% endif %}" href="{% url 'analytics:comparison' %}">⇄ <span>Channel comparison</span></a>
-      <a class="nav-link {% if request.resolver_match.url_name == 'insights' %}active{% endif %}" href="{% url 'analytics:insights' %}">✳ <span>Insightss</span></a>
+      <a class="nav-link {% if request.resolver_match.url_name == 'insights' %}active{% endif %}" href="{% url 'analytics:insights' %}">✳ <span>Insights</span></a>
+      <a class="nav-link {% if request.resolver_match.url_name == 'ads' %}active{% endif %}" href="{% url 'analytics:ads' %}">▤ <span>Ads</span></a>
+      <a class="nav-link {% if request.resolver_match.url_name == 'audience' %}active{% endif %}" href="{% url 'analytics:audience' %}">◉ <span>Audience</span></a>
       <form class="sidebar-clear-form" method="post" action="{% url 'analytics:clear_data' %}" onsubmit="return confirm('Clear all imported social media data? This cannot be undone.');">
         {% csrf_token %}
         <button class="nav-link clear-data-button" type="submit" title="Clear all imported dashboard data">

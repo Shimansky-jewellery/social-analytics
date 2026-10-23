@@ -1,8 +1,11 @@
+from decimal import Decimal
+
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.test import Client, TestCase
 from django.urls import reverse
 
-from .models import SocialMetric
+from .models import AdPerformance, AudienceMetric, SocialMetric
 
 
 HEADERS = (
@@ -174,3 +177,271 @@ class CsvImportTests(TestCase):
 
         self.assertEqual(response.status_code, 405)
         self.assertEqual(SocialMetric.objects.count(), 1)
+
+    def test_ctr_is_averaged_and_shown_as_percentage(self):
+        SocialMetric.objects.create(channel="Instagram", period="2026-09-01", ctr=1.5)
+        SocialMetric.objects.create(channel="Instagram", period="2026-10-01", ctr=2.5)
+        dashboard = self.client.get(reverse("analytics:dashboard"))
+        self.assertEqual(dashboard.context["kpis"]["ctr"], 2.0)
+        self.assertContains(dashboard, "Avg. CTR")
+        self.assertContains(dashboard, "2.00")
+        self.assertContains(dashboard, '<span class="unit">%</span>', html=True)
+        comparison = self.client.get(reverse("analytics:comparison"))
+        ctr_metric = next(item for item in comparison.context["metrics"] if item["key"] == "ctr")
+        self.assertEqual(ctr_metric["values"][0]["value"], 2.0)
+        self.assertContains(comparison, "2.00%")
+
+    def test_null_ctr_displays_dash(self):
+        SocialMetric.objects.create(channel="Instagram", period="2026-09-01", ctr=None)
+        response = self.client.get(reverse("analytics:dashboard"))
+        self.assertIsNone(response.context["kpis"]["ctr"])
+        self.assertContains(response, "Avg. CTR")
+
+
+ADS_HEADERS = (
+    "Platform,Period Start,Period End,Ad Name,Ad Set,Status,Amount Spent (ZAR),"
+    "Impressions,Reach,Frequency,CPM (ZAR),Results,Result Type,Cost per Result (ZAR),"
+    "Quality Ranking,Engagement Rate Ranking,Conversion Rate Ranking\n"
+)
+
+ADS_ROW = (
+    "Meta,2026-09-01,2026-09-30,Autumn campaign,Prospecting,Active,1500.50,"
+    "10000,8000,1.25,150.05,25,Purchase,60.02,Above average,Average,Above average\n"
+)
+
+
+class AdCsvImportTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="ads-importer", password="test-password")
+        self.client.force_login(self.user)
+
+    def test_imports_valid_ads_csv_row(self):
+        response = self.client.post(
+            reverse("analytics:import_ads"),
+            {"ads_csv_file": csv_upload(ADS_HEADERS + ADS_ROW, "ads.csv")},
+        )
+        self.assertContains(response, "1")
+        ad = AdPerformance.objects.get()
+        self.assertEqual(ad.platform, "Meta")
+        self.assertEqual(str(ad.amount_spent), "1500.50")
+        self.assertEqual(ad.impressions, 10000)
+
+    def test_duplicate_ads_are_skipped_without_overwriting(self):
+        content = ADS_HEADERS + ADS_ROW
+        self.client.post(reverse("analytics:import_ads"), {"ads_csv_file": csv_upload(content, "ads.csv")})
+        response = self.client.post(
+            reverse("analytics:import_ads"),
+            {"ads_csv_file": csv_upload(content, "ads.csv")},
+        )
+        self.assertContains(response, "Skipped (duplicates)")
+        self.assertEqual(AdPerformance.objects.count(), 1)
+        self.assertEqual(AdPerformance.objects.get().amount_spent, 1500.50)
+
+    def test_blank_ads_numeric_values_are_saved_as_null(self):
+        blank_row = (
+            "Meta,2026-09-01,2026-09-30,Autumn campaign,,,,,-,-,,,-,,,\n"
+        )
+        response = self.client.post(
+            reverse("analytics:import_ads"),
+            {"ads_csv_file": csv_upload(ADS_HEADERS + blank_row, "ads.csv")},
+        )
+        self.assertContains(response, "1")
+        ad = AdPerformance.objects.get()
+        for field in (
+            "amount_spent", "impressions", "reach", "frequency", "cpm",
+            "results", "cost_per_result",
+        ):
+            self.assertIsNone(getattr(ad, field), field)
+
+    def test_missing_required_ads_header_is_rejected(self):
+        incomplete = ADS_HEADERS.replace("Period Start,", "")
+        response = self.client.post(
+            reverse("analytics:import_ads"),
+            {"ads_csv_file": csv_upload(incomplete + ADS_ROW, "ads.csv")},
+        )
+        self.assertContains(response, "missing headers: Period Start")
+        self.assertEqual(AdPerformance.objects.count(), 0)
+
+    def test_ads_page_and_import_are_public(self):
+        self.client.logout()
+        page = self.client.get(reverse("analytics:ads"))
+        upload = self.client.get(reverse("analytics:import_ads"))
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(upload.status_code, 200)
+        response = self.client.post(
+            reverse("analytics:import_ads"),
+            {"ads_csv_file": csv_upload(ADS_HEADERS + ADS_ROW, "ads.csv")},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(AdPerformance.objects.count(), 1)
+
+    def test_ads_import_requires_csrf_token(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        response = csrf_client.post(
+            reverse("analytics:import_ads"),
+            {"ads_csv_file": csv_upload(ADS_HEADERS + ADS_ROW, "ads.csv")},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AdPerformance.objects.count(), 0)
+
+    def test_ads_page_displays_ad_metrics_and_totals(self):
+        AdPerformance.objects.create(
+            platform="Meta",
+            period_start="2026-09-01",
+            period_end="2026-09-30",
+            ad_name="Autumn campaign",
+            amount_spent=Decimal("1500.50"),
+            impressions=10000,
+            reach=8000,
+            frequency=1.25,
+            cpm=Decimal("150.05"),
+            results=25,
+            quality_ranking="Above average",
+        )
+        response = self.client.get(reverse("analytics:ads"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["total_spend"], Decimal("1500.50"))
+        self.assertEqual(response.context["total_impressions"], 10000)
+        self.assertContains(response, "Autumn campaign")
+        self.assertContains(response, "Total spend")
+
+    def test_clear_ads_data_deletes_only_ads_and_requires_post(self):
+        ad = AdPerformance.objects.create(
+            platform="Meta",
+            period_start="2026-09-01",
+            period_end="2026-09-30",
+            ad_name="Autumn campaign",
+        )
+        social = SocialMetric.objects.create(channel="Instagram", period="2026-09")
+
+        response = self.client.get(reverse("analytics:clear_ads_data"))
+        self.assertEqual(response.status_code, 405)
+        response = self.client.post(reverse("analytics:clear_ads_data"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("analytics:ads"))
+        self.assertFalse(AdPerformance.objects.filter(pk=ad.pk).exists())
+        self.assertTrue(SocialMetric.objects.filter(pk=social.pk).exists())
+
+    def test_clear_ads_data_requires_csrf_token(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        response = csrf_client.post(reverse("analytics:clear_ads_data"))
+        self.assertEqual(response.status_code, 403)
+
+
+AUDIENCE_HEADERS = "Channel,Snapshot Date,Category,Label,Segment,Value,Unit\n"
+AUDIENCE_ROW = "Instagram,2026-10-01,Country,South Africa,,35.5,%\n"
+
+
+class AudienceCsvImportTests(TestCase):
+    def setUp(self):
+        user = get_user_model().objects.create_user(username="audience-importer", password="test-password")
+        self.client.force_login(user)
+
+    def test_imports_valid_audience_row(self):
+        response = self.client.post(
+            reverse("analytics:import_audience"),
+            {"audience_csv_file": csv_upload(AUDIENCE_HEADERS + AUDIENCE_ROW, "audience.csv")},
+        )
+        self.assertContains(response, "Created")
+        metric = AudienceMetric.objects.get()
+        self.assertEqual(metric.channel, "Instagram")
+        self.assertEqual(metric.label, "South Africa")
+        self.assertEqual(metric.value, 35.5)
+
+    def test_duplicate_audience_rows_are_skipped_without_overwriting(self):
+        content = AUDIENCE_HEADERS + AUDIENCE_ROW
+        self.client.post(
+            reverse("analytics:import_audience"),
+            {"audience_csv_file": csv_upload(content, "audience.csv")},
+        )
+        response = self.client.post(
+            reverse("analytics:import_audience"),
+            {"audience_csv_file": csv_upload(content, "audience.csv")},
+        )
+        self.assertContains(response, "Skipped (duplicates)")
+        self.assertEqual(AudienceMetric.objects.count(), 1)
+        self.assertEqual(AudienceMetric.objects.get().value, 35.5)
+
+    def test_na_label_is_preserved_as_text(self):
+        content = AUDIENCE_HEADERS + "Instagram,2026-10-01,Country,NA,,1.2, %\n"
+        self.client.post(
+            reverse("analytics:import_audience"),
+            {"audience_csv_file": csv_upload(content, "audience.csv")},
+        )
+        self.assertEqual(AudienceMetric.objects.get().label, "NA")
+
+    def test_missing_required_audience_header_is_rejected(self):
+        incomplete = AUDIENCE_HEADERS.replace("Category,", "")
+        response = self.client.post(
+            reverse("analytics:import_audience"),
+            {"audience_csv_file": csv_upload(incomplete + AUDIENCE_ROW, "audience.csv")},
+        )
+        self.assertContains(response, "missing headers: Category")
+        self.assertEqual(AudienceMetric.objects.count(), 0)
+
+    def test_audience_page_and_import_are_public_and_csrf_protected(self):
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse("analytics:audience")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("analytics:import_audience")).status_code, 200)
+        response = self.client.post(
+            reverse("analytics:import_audience"),
+            {"audience_csv_file": csv_upload(AUDIENCE_HEADERS + AUDIENCE_ROW, "audience.csv")},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(AudienceMetric.objects.count(), 1)
+
+        csrf_client = Client(enforce_csrf_checks=True)
+        response = csrf_client.post(
+            reverse("analytics:import_audience"),
+            {"audience_csv_file": csv_upload(AUDIENCE_HEADERS + AUDIENCE_ROW, "audience.csv")},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(AudienceMetric.objects.count(), 1)
+
+    def test_audience_page_defaults_to_latest_snapshot(self):
+        AudienceMetric.objects.create(
+            channel="Instagram",
+            snapshot_date="2026-09-01",
+            category="Country",
+            label="Namibia",
+            value=20,
+            unit="%",
+        )
+        AudienceMetric.objects.create(
+            channel="Instagram",
+            snapshot_date="2026-10-01",
+            category="Country",
+            label="South Africa",
+            value=35,
+            unit="%",
+        )
+        response = self.client.get(reverse("analytics:audience"))
+        self.assertEqual(response.context["selected_snapshot"], "2026-10-01")
+        self.assertContains(response, "South Africa")
+        self.assertContains(response, "Top locations only")
+
+    def test_clear_audience_data_deletes_only_audience_and_requires_post(self):
+        audience = AudienceMetric.objects.create(
+            channel="Instagram",
+            snapshot_date="2026-10-01",
+            category="Country",
+            label="South Africa",
+            value=35,
+            unit="%",
+        )
+        social = SocialMetric.objects.create(channel="Instagram", period="2026-10")
+
+        response = self.client.get(reverse("analytics:clear_audience_data"))
+        self.assertEqual(response.status_code, 405)
+        response = self.client.post(reverse("analytics:clear_audience_data"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], reverse("analytics:audience"))
+        self.assertFalse(AudienceMetric.objects.filter(pk=audience.pk).exists())
+        self.assertTrue(SocialMetric.objects.filter(pk=social.pk).exists())
+
+    def test_clear_audience_data_requires_csrf_token(self):
+        csrf_client = Client(enforce_csrf_checks=True)
+        response = csrf_client.post(reverse("analytics:clear_audience_data"))
+        self.assertEqual(response.status_code, 403)
